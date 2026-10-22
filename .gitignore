@@ -1,0 +1,24 @@
+# Rust/Tauri build output (bundled installers/executables, incremental build cache).
+src-tauri/target/
+src-tauri/gen/
+
+# Portable distribution folder produced by build.ps1 (exe + vendor installer + data/) — a build
+# artifact like everything else above, not source.
+/VoxPad-Portable/
+
+# Frontend dependency cache (huge, reinstalled by npm) and the generated bundle (rebuilt by
+# `npm run build` before every `cargo tauri build`).
+ui-src/node_modules/
+ui-src/dist/
+
+# Runtime state created on first launch (your boards/settings), not part of the app.
+data/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini

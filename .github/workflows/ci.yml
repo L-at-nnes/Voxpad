@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui-src/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Build portable package
+        shell: pwsh
+        run: ./build.ps1
+
+      - name: Rust tests
+        working-directory: src-tauri
+        run: cargo test --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VoxPad-Portable
+          path: VoxPad-Portable
+          if-no-files-found: error

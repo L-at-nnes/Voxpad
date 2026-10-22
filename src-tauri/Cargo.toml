@@ -1,0 +1,59 @@
+[package]
+name = "voxpad"
+version = "0.2.8"
+description = "A crossplatform soundboard"
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "voxpad_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png", "protocol-asset", "devtools"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-single-instance = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_repr = "0.1"
+log = "0.4"
+env_logger = "0.11"
+cpal = "0.15"
+symphonia = { version = "0.5", features = ["mp3", "wav", "flac", "pcm"] }
+lofty = "0.21"
+open = "5"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_Media_Audio",
+    "Win32_Media_Audio_Endpoints",
+    "Win32_Devices_FunctionDiscovery",
+    "Win32_Storage_EnhancedStorage",
+    "Win32_System_Threading",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_Shell_PropertiesSystem",
+    "Win32_System_Variant",
+    "Win32_System_Com_StructuredStorage",
+] }
+winreg = "0.52"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+x11rb = { version = "0.13", features = ["allow-unsafe-code"] }
+
+[dev-dependencies]
+tauri = { version = "2", features = ["test"] }
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"

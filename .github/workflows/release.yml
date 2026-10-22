@@ -1,0 +1,40 @@
+name: Release
+
+# Publishing a release is a tag push:  git tag v0.3.0 && git push origin v0.3.0
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui-src/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Build portable package
+        shell: pwsh
+        run: ./build.ps1
+
+      - name: Zip
+        shell: pwsh
+        run: Compress-Archive -Path VoxPad-Portable -DestinationPath "VoxPad-${{ github.ref_name }}-windows-x64-portable.zip"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: VoxPad-*-windows-x64-portable.zip
+          generate_release_notes: true
