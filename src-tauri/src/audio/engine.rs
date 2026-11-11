@@ -597,6 +597,40 @@ fn decode_to_stereo(path: &Path) -> Option<(Vec<f32>, u32, u64)> {
     Some((stereo, sample_rate, total_frames))
 }
 
+/// Resampling kernel size: each output frame is a weighted sum of this many source frames.
+const SINC_TAPS: usize = 32;
+/// Number of precomputed fractional positions between two source frames.
+const SINC_PHASES: usize = 512;
+
+/// Builds the windowed-sinc interpolation table used when a file's sample rate differs from
+/// the output device's: `SINC_PHASES + 1` rows of `SINC_TAPS` coefficients, row `p` being the
+/// kernel for a read position `p / SINC_PHASES` of the way between two source frames. Picking
+/// the nearest source frame instead (what the callback used to do) is not band-limited, so it
+/// sprayed aliasing all over the spectrum — a gritty, "8-bit" sound on e.g. a 44.1 kHz MP3
+/// played on a 48 kHz device. `cutoff` (<= 1.0, relative to the source's Nyquist frequency) is
+/// lowered when downsampling so content the device can't represent is filtered out rather
+/// than folded back.
+fn build_sinc_table(cutoff: f64) -> Vec<f32> {
+    use std::f64::consts::PI;
+    let half = (SINC_TAPS / 2) as f64;
+    let mut table = Vec::with_capacity((SINC_PHASES + 1) * SINC_TAPS);
+    for phase in 0..=SINC_PHASES {
+        let frac = phase as f64 / SINC_PHASES as f64;
+        let mut row = [0.0f64; SINC_TAPS];
+        for (tap, coeff) in row.iter_mut().enumerate() {
+            // Distance (in source frames) from this tap's frame to the read position.
+            let x = tap as f64 - (half - 1.0) - frac;
+            let sinc = if x.abs() < 1e-9 { 1.0 } else { (PI * x * cutoff).sin() / (PI * x * cutoff) };
+            let window = 0.5 * (1.0 + (PI * x / half).cos()); // Hann
+            *coeff = sinc * window;
+        }
+        // Normalize so every phase has exactly unity gain (no level ripple between phases).
+        let sum: f64 = row.iter().sum();
+        table.extend(row.iter().map(|c| (c / sum) as f32));
+    }
+    table
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_stream(
     device: &cpal::Device,
@@ -614,6 +648,8 @@ fn build_stream(
     let device_channels = stream_config.channels as usize;
     let device_rate = stream_config.sample_rate.0;
     let ratio = src_rate as f64 / device_rate.max(1) as f64;
+    // Only needed when the rates differ; at a matching rate frames are copied through as-is.
+    let sinc = (src_rate != device_rate).then(|| build_sinc_table((1.0 / ratio).min(1.0)));
     let fade_frames = (FADE_MS / 1000.0 * device_rate.max(1) as f64).max(1.0);
 
     let err_fn = |e| log::error!("audio stream error: {e}");
@@ -635,6 +671,7 @@ fn build_stream(
                             &samples,
                             total_frames,
                             ratio,
+                            sinc.as_deref(),
                             fade_frames,
                             &control,
                             is_local,
@@ -669,6 +706,7 @@ fn run_callback<S: cpal::Sample + cpal::FromSample<f32>>(
     samples: &[f32],
     total_frames: u64,
     ratio: f64,
+    sinc: Option<&[f32]>,
     fade_frames: f64,
     control: &PlaybackControl,
     is_local: bool,
@@ -746,8 +784,24 @@ fn run_callback<S: cpal::Sample + cpal::FromSample<f32>>(
         }
 
         let g = volume * *fade_gain;
-        let l = samples[(idx * 2) as usize] * g;
-        let r = samples[(idx * 2 + 1) as usize] * g;
+        let (l, r) = match sinc {
+            None => (samples[(idx * 2) as usize] * g, samples[(idx * 2 + 1) as usize] * g),
+            Some(table) => {
+                let phase = ((*cursor - idx as f64) * SINC_PHASES as f64).round() as usize;
+                let coeffs = &table[phase * SINC_TAPS..][..SINC_TAPS];
+                let first = idx as i64 - (SINC_TAPS as i64 / 2 - 1);
+                let (mut l, mut r) = (0.0f32, 0.0f32);
+                for (tap, &c) in coeffs.iter().enumerate() {
+                    // Frames before the start / past the end of the sound count as silence.
+                    let f = first + tap as i64;
+                    if f >= 0 && (f as u64) < total_frames {
+                        l += samples[f as usize * 2] * c;
+                        r += samples[f as usize * 2 + 1] * c;
+                    }
+                }
+                (l * g, r * g)
+            }
+        };
 
         match device_channels {
             1 => frame[0] = S::from_sample((l + r) * 0.5),
@@ -805,6 +859,7 @@ mod tests {
                 &samples,
                 total_frames,
                 ratio,
+                None,
                 fade_frames,
                 &control,
                 true,
@@ -852,6 +907,7 @@ mod tests {
                 &samples,
                 total_frames,
                 ratio,
+                None,
                 fade_frames,
                 &control,
                 true,
@@ -898,6 +954,7 @@ mod tests {
                 &samples,
                 total_frames,
                 ratio,
+                None,
                 fade_frames,
                 &control,
                 true,
@@ -912,6 +969,73 @@ mod tests {
         }
 
         assert!(rx.try_recv().is_err(), "repeat=true must not fire Finished");
+    }
+
+    /// Plays a pure tone recorded at `src_rate` through `run_callback` on a fake `device_rate`
+    /// device and returns the signal-to-noise ratio (dB) against the mathematically ideal tone
+    /// at the device rate — i.e. how much garbage the sample-rate conversion adds.
+    fn resampled_tone_snr_db(src_rate: u32, device_rate: u32, freq: f64) -> f64 {
+        use std::f64::consts::TAU;
+        let total_frames = src_rate as u64; // 1s of source audio
+        let mut samples = Vec::with_capacity(total_frames as usize * 2);
+        for i in 0..total_frames {
+            let s = ((i as f64 / src_rate as f64 * freq * TAU).sin() * 0.5) as f32;
+            samples.push(s);
+            samples.push(s);
+        }
+        let control = PlaybackControl::new(1.0, 1.0);
+        let (tx, _rx) = sync_channel::<EngineEvent>(16);
+
+        let mut cursor = 0.0f64;
+        let mut fade_gain = 1.0f32;
+        let mut seeking = false;
+        let mut stopping = false;
+        let mut stop_notified = false;
+        let ratio = src_rate as f64 / device_rate as f64;
+        let sinc = (src_rate != device_rate).then(|| build_sinc_table((1.0 / ratio).min(1.0)));
+
+        let out_frames = device_rate as usize / 2; // half a second, well clear of the end
+        let mut output = vec![0.0f32; out_frames * 2];
+        run_callback(
+            &mut output,
+            2,
+            &samples,
+            total_frames,
+            ratio,
+            sinc.as_deref(),
+            1.0,
+            &control,
+            true,
+            1,
+            &tx,
+            &mut cursor,
+            &mut fade_gain,
+            &mut seeking,
+            &mut stopping,
+            &mut stop_notified,
+        );
+
+        let (mut signal, mut noise) = (0.0f64, 0.0f64);
+        for n in 100..out_frames - 100 {
+            let ideal = (n as f64 / device_rate as f64 * freq * TAU).sin() * 0.5;
+            let got = output[n * 2] as f64;
+            signal += ideal * ideal;
+            noise += (got - ideal) * (got - ideal);
+        }
+        10.0 * (signal / noise).log10()
+    }
+
+    /// A file whose sample rate differs from the output device's must still come out clean:
+    /// nearest-sample resampling only managed ~28 dB here (audibly gritty, "8-bit" sounding).
+    #[test]
+    fn resampling_keeps_tones_clean() {
+        for (src_rate, device_rate, freq) in
+            [(44100, 48000, 1000.0), (44100, 48000, 5000.0), (22050, 48000, 3000.0), (48000, 44100, 5000.0)]
+        {
+            let snr = resampled_tone_snr_db(src_rate, device_rate, freq);
+            println!("{src_rate} -> {device_rate} Hz, {freq} Hz tone: SNR {snr:.1} dB");
+            assert!(snr > 60.0, "{src_rate} -> {device_rate} Hz, {freq} Hz tone: SNR only {snr:.1} dB");
+        }
     }
 
     /// Writes a minimal valid PCM16 mono WAV file so `AudioEngine::play` can decode a *real*
