@@ -83,6 +83,8 @@
     "toBoard": "Turn into a soundboard",
     "toBoardTitle": "Turn tag into a soundboard",
     "toBoardHint": "The {count} sound(s) tagged “{tag}” move to a new soundboard, and the tag is removed from this one.",
+    "moveTo": "Move to…",
+    "moved": "Tag “{tag}” moved to “{name}”",
     "toBoardConfirm": "Create soundboard",
     "toBoardDone": "Soundboard “{name}” created"
   },

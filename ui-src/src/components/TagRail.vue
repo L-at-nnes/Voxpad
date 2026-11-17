@@ -116,6 +116,20 @@
         <button class="vx-context__item" @click="openSplit">
           <VxIcon name="grid-view" :size="16" /> {{ $t('tags.toBoard') }}
         </button>
+        <template v-if="otherBoards.length">
+          <div class="vx-context__label">{{ $t('tags.moveTo') }}</div>
+          <div class="vx-context__boards">
+            <button
+              v-for="b in otherBoards"
+              :key="b.id"
+              class="vx-context__item"
+              :title="b.name"
+              @click="moveMenuTag(b.id)"
+            >
+              <span class="vx-context__name">{{ b.name }}</span>
+            </button>
+          </div>
+        </template>
       </div>
     </transition>
 
@@ -145,6 +159,7 @@
 import Vue from 'vue';
 import VxIcon from '@/components/VxIcon.vue';
 import VxModal from '@/components/VxModal.vue';
+import { Tab } from '@/types';
 import { NO_TAG } from '@/store';
 
 const WIDTH_KEY = 'voxpad.tagRailWidth';
@@ -170,6 +185,8 @@ export default Vue.extend({
     pressed: null as { tag: string; y: number } | null,
     dragging: null as string | null,
     dropIndex: null as number | null,
+    // board under the pointer while dragging (dropping there moves the tag to that board)
+    dropBoard: null as number | null,
     // right-click menu and the "turn into a soundboard" dialog
     menu: { show: false, x: 0, y: 0, tag: '' },
     splitOpen: false,
@@ -189,6 +206,10 @@ export default Vue.extend({
     total(): number {
       const tab = this.$store.getters.currentTab;
       return tab ? tab.sounds.length : 0;
+    },
+    otherBoards(): Tab[] {
+      const current = this.$store.getters.currentTab as Tab | null;
+      return this.$store.getters.tabs.filter((t: Tab) => !current || t.id !== current.id);
     },
     splitCount(): number {
       return this.tags.find(t => t.tag === this.splitTag)?.count ?? 0;
@@ -266,7 +287,12 @@ export default Vue.extend({
     openMenu(e: MouseEvent, tag: string) {
       this.cancel();
       this.confirming = null;
-      this.menu = { show: true, x: Math.min(e.clientX, window.innerWidth - 220), y: e.clientY, tag };
+      this.menu = {
+        show: true,
+        x: Math.min(e.clientX, window.innerWidth - 220),
+        y: Math.min(e.clientY, window.innerHeight - 320),
+        tag,
+      };
     },
     closeMenu() {
       this.menu.show = false;
@@ -284,6 +310,16 @@ export default Vue.extend({
         input?.focus();
         input?.select();
       });
+    },
+    async moveMenuTag(dest: number) {
+      const tag = this.menu.tag;
+      this.closeMenu();
+      await this.moveTag(tag, dest);
+    },
+    async moveTag(tag: string, dest: number) {
+      const board = (this.$store.getters.tabs as Tab[]).find(t => t.id === dest);
+      const done = await this.$store.dispatch('moveTag', { tag, dest });
+      if (done && board) Vue.$toast.success(`${this.$t('tags.moved', { tag, name: board.name })}`);
     },
     closeSplit() {
       this.splitOpen = false;
@@ -310,7 +346,12 @@ export default Vue.extend({
         if (Math.abs(e.clientY - this.pressed.y) < DRAG_THRESHOLD) return;
         this.dragging = this.pressed.tag;
       }
-      this.dropIndex = this.indexAt(e.clientY);
+      // over a soundboard in the left rail: dropping moves the tag there instead of reordering
+      const over = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-board-drop]');
+      const board = over ? parseInt(over.getAttribute('data-board-drop') || '', 10) : NaN;
+      this.dropBoard = Number.isNaN(board) ? null : board;
+      this.$store.commit('setTagDropBoard', this.dropBoard);
+      this.dropIndex = this.dropBoard === null ? this.indexAt(e.clientY) : null;
     },
     // Index of the row the pointer is above (rows.length = after the last one).
     indexAt(y: number): number {
@@ -324,7 +365,12 @@ export default Vue.extend({
     onDragEnd() {
       const tag = this.dragging;
       const to = this.dropIndex;
+      const board = this.dropBoard;
       this.stopDrag();
+      if (tag !== null && board !== null) {
+        this.moveTag(tag, board);
+        return;
+      }
       if (tag === null || to === null) return;
       const order = this.tags.map(t => t.tag);
       const from = order.indexOf(tag);
@@ -337,6 +383,8 @@ export default Vue.extend({
       window.removeEventListener('mouseup', this.onDragEnd);
       this.pressed = null;
       this.dropIndex = null;
+      this.dropBoard = null;
+      this.$store.commit('setTagDropBoard', null);
       // keep `dragging` set until after the trailing click event so select() can ignore it
       setTimeout(() => (this.dragging = null), 0);
     },
@@ -374,6 +422,27 @@ export default Vue.extend({
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: 0 12px 32px oklch(0 0 0 / 0.45);
+
+  &__label {
+    padding: 8px 10px 4px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+
+  &__boards {
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  &__name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 
   &__item {
     display: flex;

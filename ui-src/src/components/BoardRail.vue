@@ -9,10 +9,12 @@
         class="vx-rail__row"
         :class="{
           'vx-rail__row--dragging': dragging === tab.id,
+          'vx-rail__row--tag-drop': tagDropBoard === tab.id,
           'vx-rail__row--drop-before': dropIndex === i,
           'vx-rail__row--drop-after': dropIndex === tabs.length && i === tabs.length - 1,
         }"
         data-board-row
+        :data-board-drop="i === activeTab ? null : tab.id"
         @mousedown="pressRow($event, tab.id)"
       >
         <BoardAvatar
@@ -68,6 +70,9 @@ export default Vue.extend({
   computed: {
     tabs(): Tab[] {
       return this.$store.getters.tabs;
+    },
+    tagDropBoard(): number | null {
+      return this.$store.getters.tagDropBoard;
     },
     activeTab(): number {
       return this.$store.getters.activeTab;
@@ -201,6 +206,12 @@ export default Vue.extend({
 
     &--dragging {
       opacity: 0.45;
+    }
+    // a tag from the tag rail is being dragged over this board
+    &--tag-drop {
+      border-radius: 14px;
+      box-shadow: 0 0 0 2px var(--accent);
+      background: var(--accent-soft);
     }
     // drop indicator line
     &--drop-before::before,
