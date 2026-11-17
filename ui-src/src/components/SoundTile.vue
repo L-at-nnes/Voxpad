@@ -162,10 +162,16 @@ export default Vue.extend({
     font-weight: 500;
     color: var(--text);
     text-align: center;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
     padding: 0 2px;
+    // up to two lines so long names stay readable at low zoom; the box always reserves both
+    // lines so tiles keep the same height whether a name wraps or not
+    line-height: 1.25;
+    min-height: 2.5em;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
   }
 
   &__keybind {
