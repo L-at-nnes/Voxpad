@@ -38,6 +38,7 @@ declare global {
     refreshImportedFolders: (id: number) => Promise<Tab | null>;
     importFiles: (id: number) => Promise<Tab | null>;
     removeTab: (id: number) => Promise<Tab[] | null>;
+    reorderTabs: (order: number[]) => Promise<Tab[] | null>;
     setSortMode: (tabId: number, sortMode: SortMode) => Promise<Tab | null>;
 
     playSound: (id: number, noRepeat?: boolean) => Promise<PlayingSound | null>;

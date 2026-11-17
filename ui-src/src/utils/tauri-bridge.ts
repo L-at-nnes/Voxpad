@@ -43,6 +43,7 @@ window.importFolder = id => safeInvoke<Tab | null>('import_folder', { id });
 window.refreshImportedFolders = id => safeInvoke<Tab | null>('refresh_imported_folders', { id });
 window.importFiles = id => safeInvoke<Tab | null>('import_files', { id });
 window.removeTab = id => safeInvoke<Tab[] | null>('remove_tab', { id });
+window.reorderTabs = order => safeInvoke<Tab[] | null>('reorder_tabs', { order });
 window.setSortMode = (tabId, sortMode) =>
   safeInvoke<Tab | null>('set_sort_mode', { id: tabId, sortMode });
 
