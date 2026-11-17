@@ -796,6 +796,85 @@ fn merge_board_into_tag(
     true
 }
 
+/// Core of `move_tag_to_board`: the tag and every sound carrying it leave `src_id` for
+/// `dest_id`, where the tag keeps existing (an existing tag of the same name there, whatever its
+/// case, is merged with it). The moved sounds keep their other tags. A sound whose file cannot
+/// be moved stays in the source board, tag included. Returns false if nothing was done.
+fn move_tag_between_boards(
+    data: &mut Data,
+    src_id: u32,
+    dest_id: u32,
+    tag: &str,
+    mover: &mut dyn FnMut(&Sound, u32) -> Option<String>,
+) -> bool {
+    if src_id == dest_id || tag.is_empty() {
+        return false;
+    }
+    let (Some(src_idx), Some(dest_idx)) = (
+        data.tabs.iter().position(|t| t.id == src_id),
+        data.tabs.iter().position(|t| t.id == dest_id),
+    ) else {
+        return false;
+    };
+
+    let mut moved = Vec::new();
+    let mut kept = Vec::new();
+    for mut sound in std::mem::take(&mut data.tabs[src_idx].sounds) {
+        if !sound.tags.iter().any(|t| t == tag) {
+            kept.push(sound);
+        } else if let Some(path) = mover(&sound, dest_id) {
+            sound.path = path;
+            moved.push(sound);
+        } else {
+            kept.push(sound);
+        }
+    }
+    let src = &mut data.tabs[src_idx];
+    src.sounds = kept;
+    if !src.sounds.iter().any(|s| s.tags.iter().any(|t| t == tag)) {
+        src.tags.retain(|t| t != tag);
+    }
+    let src_tags = src.tags.clone();
+
+    let dest = &mut data.tabs[dest_idx];
+    // reuse the spelling the destination already has for this tag
+    let spelled = dest
+        .tags
+        .iter()
+        .chain(dest.sounds.iter().flat_map(|s| s.tags.iter()))
+        .find(|t| t.to_lowercase() == tag.to_lowercase())
+        .cloned()
+        .unwrap_or_else(|| tag.to_string());
+    for s in moved.iter_mut() {
+        for t in s.tags.iter_mut().filter(|t| t.as_str() == tag) {
+            *t = spelled.clone();
+        }
+        s.tags = normalize_tags(std::mem::take(&mut s.tags));
+    }
+    // the destination learns the tag, then the other tags the moved sounds brought along
+    dest.tags.push(spelled);
+    dest.tags.extend(src_tags.into_iter().filter(|t| moved.iter().any(|s| s.tags.contains(t))));
+    dest.tags.extend(moved.iter().flat_map(|s| s.tags.clone()));
+    dest.tags = normalize_tags(std::mem::take(&mut dest.tags));
+    dest.sounds.extend(moved);
+    sort_sounds(&mut dest.sounds, dest.sort_mode);
+    true
+}
+
+/// Drag a tag onto a soundboard, or right-click it > "Move to": see `move_tag_between_boards`.
+/// Returns every board, or `None` if the request was invalid.
+#[tauri::command]
+pub fn move_tag_to_board(state: State<AppState>, id: u32, tag: String, dest: u32) -> Option<Vec<Tab>> {
+    let mut data = state.data_lock();
+    if !move_tag_between_boards(&mut data, id, dest, &tag, &mut |s, to| move_sound_file(s, id, to)) {
+        return None;
+    }
+    let result = data.tabs.clone();
+    drop(data);
+    persist(&state);
+    Some(result)
+}
+
 /// Right-click a tag > "Turn into a soundboard": see `split_tag_into_board`. Returns every
 /// board (two of them changed), or `None` if the request was invalid.
 #[tauri::command]
@@ -902,6 +981,64 @@ mod tests {
 
     fn ok_mover(s: &Sound, to: u32) -> Option<String> {
         Some(format!("/moved/{to}/{}", s.id))
+    }
+
+    #[test]
+    fn move_tag_takes_the_tag_and_its_sounds_to_the_other_board() {
+        let mut d = data(vec![
+            tab(0, "A", &["Memes", "Music"], vec![
+                sound(1, "a", &["Memes"]),
+                sound(2, "b", &["Memes", "Music"]),
+                sound(3, "c", &["Music"]),
+            ]),
+            tab(1, "B", &["Loud"], vec![sound(4, "d", &["Loud"])]),
+        ]);
+        assert!(move_tag_between_boards(&mut d, 0, 1, "Memes", &mut ok_mover));
+        let (a, b) = (&d.tabs[0], &d.tabs[1]);
+        assert_eq!(ids(a), vec![3]);
+        assert_eq!(a.tags, vec!["Music"]);
+        assert_eq!(ids(b), vec![1, 2, 4]);
+        assert_eq!(b.sounds[0].tags, vec!["Memes"]);
+        assert_eq!(b.sounds[1].tags, vec!["Memes", "Music"]);
+        assert_eq!(b.sounds[0].path, "/moved/1/1");
+        assert_eq!(b.tags, vec!["Loud", "Memes", "Music"]);
+    }
+
+    #[test]
+    fn move_tag_merges_with_a_same_named_tag_in_the_destination() {
+        let mut d = data(vec![
+            tab(0, "A", &["memes"], vec![sound(1, "a", &["memes"])]),
+            tab(1, "B", &["Memes"], vec![sound(2, "b", &["Memes"])]),
+        ]);
+        assert!(move_tag_between_boards(&mut d, 0, 1, "memes", &mut ok_mover));
+        assert_eq!(d.tabs[1].tags, vec!["Memes"]);
+        assert_eq!(d.tabs[1].sounds[0].tags, vec!["Memes"]);
+        assert_eq!(ids(&d.tabs[1]), vec![1, 2]);
+        assert!(d.tabs[0].tags.is_empty() && d.tabs[0].sounds.is_empty());
+    }
+
+    #[test]
+    fn move_tag_leaves_behind_sounds_whose_file_cannot_move() {
+        let mut d = data(vec![
+            tab(0, "A", &["t"], vec![sound(1, "a", &["t"]), sound(2, "b", &["t"])]),
+            tab(1, "B", &[], vec![]),
+        ]);
+        let mut mover = |s: &Sound, to: u32| if s.id == 1 { None } else { ok_mover(s, to) };
+        assert!(move_tag_between_boards(&mut d, 0, 1, "t", &mut mover));
+        assert_eq!(ids(&d.tabs[0]), vec![1]);
+        assert_eq!(d.tabs[0].tags, vec!["t"]);
+        assert_eq!(ids(&d.tabs[1]), vec![2]);
+        assert_eq!(d.tabs[1].tags, vec!["t"]);
+    }
+
+    #[test]
+    fn move_tag_rejects_bad_input() {
+        let mut d = data(vec![tab(0, "A", &["t"], vec![sound(1, "a", &["t"])]), tab(1, "B", &[], vec![])]);
+        assert!(!move_tag_between_boards(&mut d, 0, 0, "t", &mut ok_mover));
+        assert!(!move_tag_between_boards(&mut d, 0, 7, "t", &mut ok_mover));
+        assert!(!move_tag_between_boards(&mut d, 0, 1, "", &mut ok_mover));
+        assert_eq!(ids(&d.tabs[0]), vec![1]);
+        assert!(d.tabs[1].sounds.is_empty());
     }
 
     #[test]
