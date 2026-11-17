@@ -55,6 +55,8 @@ declare global {
     reorderTags: (id: number, tags: string[]) => Promise<Tab | null>;
     renameTag: (id: number, oldTag: string, newTag: string) => Promise<Tab | null>;
     deleteTag: (id: number, tag: string) => Promise<Tab | null>;
+    tagToBoard: (id: number, tag: string, name: string) => Promise<Tab[] | null>;
+    boardToTag: (id: number, dest: number, tag: string) => Promise<Tab[] | null>;
 
     setHotkey: (id: number, hotkeys: number[]) => Promise<void>;
     getHotkeySequence: (hotkeys: number[]) => Promise<string | null>;
