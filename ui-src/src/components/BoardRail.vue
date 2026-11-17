@@ -23,6 +23,9 @@
         :style="{ left: menu.x + 'px', top: menu.y + 'px' }"
         @click.stop
       >
+        <button v-if="tabs.length > 1" class="vx-context__item" @click="mergeMenuTab">
+          <VxIcon name="grid-view" :size="16" /> {{ $t('board.merge') }}
+        </button>
         <button class="vx-context__item vx-context__item--danger" @click="removeMenuTab">
           <VxIcon name="trash" :size="16" /> {{ $t('board.delete') }}
         </button>
@@ -67,6 +70,10 @@ export default Vue.extend({
     },
     closeMenu() {
       this.menu.show = false;
+    },
+    mergeMenuTab() {
+      if (this.menu.tab) this.$store.commit('setMergeBoard', this.menu.tab.id);
+      this.closeMenu();
     },
     removeMenuTab() {
       if (this.menu.tab) this.$store.dispatch('removeBoard', this.menu.tab);

@@ -59,6 +59,7 @@
 
     <CreateBoardDialog />
     <TagDialog />
+    <MergeBoardDialog />
     <SettingsDialog />
   </div>
 </template>
@@ -81,6 +82,7 @@ import ViewModeControl from '@/components/ViewModeControl.vue';
 import PlaybackBar from '@/components/PlaybackBar.vue';
 import TagDialog from '@/components/TagDialog.vue';
 import CreateBoardDialog from '@/components/CreateBoardDialog.vue';
+import MergeBoardDialog from '@/components/MergeBoardDialog.vue';
 import SettingsDialog from '@/components/SettingsDialog.vue';
 import VxIcon from '@/components/VxIcon.vue';
 
@@ -88,7 +90,7 @@ export default Vue.extend({
   name: 'App',
   components: {
     BoardRail, TagRail, CoverBanner, SoundGrid, SoundList, AlbumView, Inspector,
-    ZoomControl, ViewModeControl, PlaybackBar, TagDialog, CreateBoardDialog, SettingsDialog, VxIcon,
+    ZoomControl, ViewModeControl, PlaybackBar, TagDialog, CreateBoardDialog, MergeBoardDialog, SettingsDialog, VxIcon,
   },
   data: () => ({ query: '', raf: 0, BoardViewMode, NO_TAG }),
   computed: {
