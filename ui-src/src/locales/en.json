@@ -32,6 +32,7 @@
     "refreshImportedFolders": "Refresh imported folders",
     "changeCover": "Change cover",
     "cover": "Cover",
+    "coverFailed": "That file could not be read as an image.",
     "sound": "sound",
     "sounds": "sounds"
   },

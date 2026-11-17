@@ -1,5 +1,10 @@
 <template>
   <header class="vx-banner" :style="bannerStyle" @click="deselect">
+    <template v-if="coverUrl">
+      <!-- the whole picture, top to bottom, over a blurred copy of itself that fills the strip -->
+      <div class="vx-banner__fill" :style="{ backgroundImage: coverUrl }"></div>
+      <div class="vx-banner__art" :style="{ backgroundImage: coverUrl }"></div>
+    </template>
     <div class="vx-banner__scrim"></div>
     <div class="vx-banner__content">
       <div class="vx-banner__titles">
@@ -44,11 +49,11 @@ export default Vue.extend({
       const n = this.tab.sounds.length;
       return `${n} ${this.$t(n === 1 ? 'board.sound' : 'board.sounds')}`;
     },
+    coverUrl(): string {
+      return this.tab.cover ? `url("${fileUrl(this.tab.cover)}")` : '';
+    },
     bannerStyle(): Record<string, string> {
-      if (this.tab.cover) {
-        return { backgroundImage: `url("${fileUrl(this.tab.cover)}")` };
-      }
-      return { background: gradientFromName(this.tab.name) };
+      return this.tab.cover ? {} : { background: gradientFromName(this.tab.name) };
     },
   },
   methods: {
@@ -69,6 +74,7 @@ export default Vue.extend({
       if (cover) {
         const tab = await window.setTabCover(this.tab.id, cover);
         if (tab) this.$store.commit('replaceTab', tab);
+        else Vue.$toast.error(`${this.$t('board.coverFailed')}`);
       }
     },
   },
@@ -83,10 +89,25 @@ export default Vue.extend({
   height: 200px;
   border-radius: var(--radius-lg);
   overflow: hidden;
-  background-size: cover;
-  background-position: center;
+  background: var(--surface);
   display: flex;
   align-items: flex-end;
+
+  &__fill,
+  &__art {
+    position: absolute;
+    inset: 0;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+  &__fill {
+    background-size: cover;
+    filter: blur(28px) brightness(0.8);
+    transform: scale(1.15);
+  }
+  &__art {
+    background-size: contain;
+  }
 
   &__scrim {
     position: absolute;

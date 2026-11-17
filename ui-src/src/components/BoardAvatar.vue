@@ -26,7 +26,9 @@ export default Vue.extend({
   },
   computed: {
     coverUrl(): string {
-      return this.tab.cover ? fileUrl(this.tab.cover) : '';
+      // the small thumbnail when there is one (boards from older versions only have `cover`)
+      const src = this.tab.coverThumb || this.tab.cover;
+      return src ? fileUrl(src) : '';
     },
     label(): string {
       return initials(this.tab.name);

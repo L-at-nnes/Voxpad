@@ -47,6 +47,7 @@ export interface Tab {
   id: number;
   name: string;
   cover: string;
+  coverThumb: string;
   sounds: Sound[];
   sortMode: SortMode;
   zoom: number | null;
