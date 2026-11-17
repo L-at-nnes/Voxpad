@@ -130,8 +130,17 @@ pub fn get_tabs(state: State<AppState>) -> Vec<Tab> {
     state.data_lock().tabs.clone()
 }
 
+/// Creates a board; its cover (if any) is converted to a banner + thumbnail first. An image that
+/// can't be read just leaves the board on its generated gradient.
 #[tauri::command]
-pub fn create_tab(state: State<AppState>, name: String, cover: String) -> Option<Tab> {
+pub async fn create_tab(app: tauri::AppHandle, name: String, cover: String) -> Result<Option<Tab>, ()> {
+    // decoding and resizing a big picture is CPU work: keep it off the async runtime
+    Ok(tauri::async_runtime::spawn_blocking(move || create_tab_with_cover(&app.state::<AppState>(), name, cover))
+        .await
+        .unwrap_or(None))
+}
+
+fn create_tab_with_cover(state: &AppState, name: String, cover: String) -> Option<Tab> {
     let mut data = state.data_lock();
     // `tabs.len()` would collide with an existing id once any board has ever been deleted (ids
     // aren't renumbered on delete, so len() under-counts). Basing the new id on the current max
@@ -140,12 +149,20 @@ pub fn create_tab(state: State<AppState>, name: String, cover: String) -> Option
     let tab = Tab {
         id,
         name: if name.is_empty() { "New soundboard".to_string() } else { name },
-        cover,
         ..Default::default()
     };
     data.tabs.push(tab.clone());
     drop(data);
-    persist(&state);
+
+    let mut tab = tab;
+    if !cover.is_empty() && crate::covers::set_cover(&mut tab, &cover) {
+        let mut data = state.data_lock();
+        if let Some(stored) = data.tabs.iter_mut().find(|t| t.id == tab.id) {
+            stored.cover = tab.cover.clone();
+            stored.cover_thumb = tab.cover_thumb.clone();
+        }
+    }
+    persist(state);
     Some(tab)
 }
 
@@ -172,15 +189,27 @@ pub fn reorder_tabs(state: State<AppState>, order: Vec<u32>) -> Vec<Tab> {
     result
 }
 
+/// Sets (or, with an empty path, removes) a board's cover. `None` if the image can't be read.
 #[tauri::command]
-pub fn set_tab_cover(state: State<AppState>, id: u32, cover: String) -> Option<Tab> {
-    let mut data = state.data_lock();
-    let tab = data.tabs.iter_mut().find(|t| t.id == id)?;
-    tab.cover = cover;
-    let result = tab.clone();
-    drop(data);
-    persist(&state);
-    Some(result)
+pub async fn set_tab_cover(app: tauri::AppHandle, id: u32, cover: String) -> Result<Option<Tab>, ()> {
+    Ok(tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let mut tab = state.data_lock().tabs.iter().find(|t| t.id == id)?.clone();
+        if !crate::covers::set_cover(&mut tab, &cover) {
+            return None;
+        }
+        let mut data = state.data_lock();
+        // the board may have been deleted while the image was being converted
+        let stored = data.tabs.iter_mut().find(|t| t.id == id)?;
+        stored.cover = tab.cover.clone();
+        stored.cover_thumb = tab.cover_thumb.clone();
+        let result = stored.clone();
+        drop(data);
+        persist(&state);
+        Some(result)
+    })
+    .await
+    .unwrap_or(None))
 }
 
 #[tauri::command]
@@ -397,6 +426,7 @@ pub fn remove_tab(state: State<AppState>, id: u32) -> Vec<Tab> {
     let result = data.tabs.clone();
     drop(data);
     persist(&state);
+    crate::covers::remove_all(id);
     result
 }
 
@@ -792,6 +822,7 @@ pub fn board_to_tag(state: State<AppState>, id: u32, dest: u32, tag: String) -> 
     // the emptied source folder is no longer referenced by anything
     if !result.iter().any(|t| t.id == id) {
         let _ = std::fs::remove_dir(crate::config::sounds_dir(id));
+        crate::covers::remove_all(id);
     }
     Some(result)
 }

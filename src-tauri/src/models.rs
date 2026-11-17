@@ -175,6 +175,9 @@ pub struct Tab {
     /// Optional cover image path; empty = name-gradient fallback in the UI.
     #[serde(default)]
     pub cover: String,
+    /// Small square version of `cover` for the left rail; empty = use `cover` itself.
+    #[serde(rename = "coverThumb", default)]
+    pub cover_thumb: String,
 
     pub sounds: Vec<Sound>,
     #[serde(rename = "sortMode", default)]

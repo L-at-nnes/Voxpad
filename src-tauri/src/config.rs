@@ -23,6 +23,16 @@ pub fn sounds_dir(tab_id: u32) -> PathBuf {
         .join(tab_id.to_string())
 }
 
+/// Where a board's cover banner and thumbnail are stored.
+pub fn covers_dir(tab_id: u32) -> PathBuf {
+    config_path()
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("data"))
+        .join("covers")
+        .join(tab_id.to_string())
+}
+
 /// Loads `data/config.json`. Missing file → default config (first run). Corrupted JSON or a
 /// schema too old to parse → the file is moved aside as `config_old_<epoch>.json` (never
 /// overwritten/lost) and a default config is returned, matching `Config::load`'s recovery

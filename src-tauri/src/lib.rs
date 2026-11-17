@@ -5,6 +5,8 @@ mod commands;
 #[allow(dead_code)]
 mod config;
 #[allow(dead_code)]
+mod covers;
+#[allow(dead_code)]
 mod hotkeys;
 #[allow(dead_code)]
 mod metadata;
@@ -46,6 +48,9 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::load())
         .setup(|app| {
+            // older boards reference their cover image in place: convert them before the UI loads
+            covers::migrate(&app.state::<AppState>());
+
             let engine = AudioEngine::new(app.handle().clone());
             app.manage(engine);
 
