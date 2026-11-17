@@ -66,6 +66,8 @@ window.renameTag = (id, oldTag, newTag) =>
   safeInvoke<Tab | null>('rename_tag', { id, old: oldTag, new: newTag });
 window.deleteTag = (id, tag) => safeInvoke<Tab | null>('delete_tag', { id, tag });
 window.tagToBoard = (id, tag, name) => safeInvoke<Tab[] | null>('tag_to_board', { id, tag, name });
+window.moveTagToBoard = (id, tag, dest) =>
+  safeInvoke<Tab[] | null>('move_tag_to_board', { id, tag, dest });
 window.boardToTag = (id, dest, tag) => safeInvoke<Tab[] | null>('board_to_tag', { id, dest, tag });
 
 window.setHotkey = (id, hotkeys) => safeInvoke<void>('set_hotkey', { id, hotkeysList: hotkeys });
