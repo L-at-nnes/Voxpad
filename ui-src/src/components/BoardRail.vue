@@ -2,15 +2,26 @@
   <nav class="vx-rail" @click="closeMenu">
     <div class="vx-rail__logo" :style="{ background: logoGradient }">V</div>
 
-    <div class="vx-rail__list">
-      <BoardAvatar
+    <div ref="list" class="vx-rail__list">
+      <div
         v-for="(tab, i) in tabs"
         :key="tab.id"
-        :tab="tab"
-        :active="i === activeTab"
-        @select="select(i)"
-        @menu="openMenu($event, tab)"
-      />
+        class="vx-rail__row"
+        :class="{
+          'vx-rail__row--dragging': dragging === tab.id,
+          'vx-rail__row--drop-before': dropIndex === i,
+          'vx-rail__row--drop-after': dropIndex === tabs.length && i === tabs.length - 1,
+        }"
+        data-board-row
+        @mousedown="pressRow($event, tab.id)"
+      >
+        <BoardAvatar
+          :tab="tab"
+          :active="i === activeTab"
+          @select="select(i)"
+          @menu="openMenu($event, tab)"
+        />
+      </div>
       <button class="vx-rail__add" :title="$t('app.newBoard')" @click="openCreate">
         <VxIcon name="plus" :size="22" />
       </button>
@@ -41,11 +52,18 @@ import { gradientFromName } from '@/utils/visual';
 import BoardAvatar from '@/components/BoardAvatar.vue';
 import VxIcon from '@/components/VxIcon.vue';
 
+// Pointer travel before a press on a board turns into a drag (so plain clicks still select).
+const DRAG_THRESHOLD = 5;
+
 export default Vue.extend({
   name: 'BoardRail',
   components: { BoardAvatar, VxIcon },
   data: () => ({
     menu: { show: false, x: 0, y: 0, tab: null as Tab | null },
+    // drag-to-reorder state
+    pressed: null as { id: number; y: number } | null,
+    dragging: null as number | null,
+    dropIndex: null as number | null,
   }),
   computed: {
     tabs(): Tab[] {
@@ -58,9 +76,60 @@ export default Vue.extend({
       return gradientFromName('voxpad-app');
     },
   },
+  beforeDestroy() {
+    this.stopDrag();
+  },
   methods: {
     select(i: number) {
+      // the click that ends a drag must not also select the board
+      if (this.dragging !== null) return;
       this.$store.dispatch('setActiveTab', i);
+    },
+
+    // --- drag to reorder (pointer events, same approach as the tag rail: native HTML5
+    // drag-and-drop is intercepted by the webview's file-drop handling) ---
+    pressRow(e: MouseEvent, id: number) {
+      if (e.button !== 0) return;
+      this.pressed = { id, y: e.clientY };
+      window.addEventListener('mousemove', this.onDragMove);
+      window.addEventListener('mouseup', this.onDragEnd);
+    },
+    onDragMove(e: MouseEvent) {
+      if (!this.pressed) return;
+      if (this.dragging === null) {
+        if (Math.abs(e.clientY - this.pressed.y) < DRAG_THRESHOLD) return;
+        this.closeMenu();
+        this.dragging = this.pressed.id;
+      }
+      this.dropIndex = this.indexAt(e.clientY);
+    },
+    // Index of the board the pointer is above (tabs.length = after the last one).
+    indexAt(y: number): number {
+      const rows = (this.$refs.list as HTMLElement).querySelectorAll('[data-board-row]');
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i].getBoundingClientRect();
+        if (y < r.top + r.height / 2) return i;
+      }
+      return rows.length;
+    },
+    onDragEnd() {
+      const id = this.dragging;
+      const to = this.dropIndex;
+      this.stopDrag();
+      if (id === null || to === null) return;
+      const order = this.tabs.map(t => t.id);
+      const from = order.indexOf(id);
+      order.splice(from, 1);
+      order.splice(to > from ? to - 1 : to, 0, id);
+      if (order.some((t, i) => t !== this.tabs[i].id)) this.$store.dispatch('reorderBoards', order);
+    },
+    stopDrag() {
+      window.removeEventListener('mousemove', this.onDragMove);
+      window.removeEventListener('mouseup', this.onDragEnd);
+      this.pressed = null;
+      this.dropIndex = null;
+      // keep `dragging` set until after the trailing click event so select() can ignore it
+      setTimeout(() => (this.dragging = null), 0);
     },
     openCreate() {
       this.$store.commit('setCreateBoardDialog', true);
@@ -120,6 +189,36 @@ export default Vue.extend({
     scrollbar-width: none;
     &::-webkit-scrollbar {
       display: none;
+    }
+  }
+
+  &__row {
+    position: relative;
+    flex: none;
+    display: flex;
+    justify-content: center;
+    width: 100%;
+
+    &--dragging {
+      opacity: 0.45;
+    }
+    // drop indicator line
+    &--drop-before::before,
+    &--drop-after::after {
+      content: '';
+      position: absolute;
+      left: 10px;
+      right: 10px;
+      height: 3px;
+      border-radius: 2px;
+      background: var(--accent);
+      z-index: 1;
+    }
+    &--drop-before::before {
+      top: -3px;
+    }
+    &--drop-after::after {
+      bottom: -3px;
     }
   }
 
