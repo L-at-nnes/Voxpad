@@ -1,6 +1,6 @@
 use crate::audio::analyze;
 use crate::config::sounds_dir;
-use crate::models::{SortMode, Sound, Tab};
+use crate::models::{Data, SortMode, Sound, Tab};
 use crate::state::AppState;
 use crate::{hotkeys, metadata};
 use std::path::{Path, PathBuf};
@@ -596,6 +596,183 @@ pub fn delete_tag(state: State<AppState>, id: u32, tag: String) -> Option<Tab> {
     Some(result)
 }
 
+const MAX_BOARD_NAME_LEN: usize = 48;
+
+/// Moves a sound's file from one board's managed folder into another's and returns its new
+/// path, or `None` if the file could not be moved. A file outside the source board's managed
+/// folder (legacy imports) is never touched: the sound keeps pointing at it.
+fn move_sound_file(sound: &Sound, from_tab: u32, to_tab: u32) -> Option<String> {
+    let src = PathBuf::from(&sound.path);
+    let from_dir = crate::config::sounds_dir(from_tab).canonicalize().ok();
+    let is_managed = src
+        .canonicalize()
+        .ok()
+        .zip(from_dir)
+        .is_some_and(|(p, d)| p.starts_with(d));
+    if !is_managed {
+        return Some(sound.path.clone());
+    }
+    let dest_dir = crate::config::sounds_dir(to_tab);
+    std::fs::create_dir_all(&dest_dir).ok()?;
+    let dest = dest_dir.join(src.file_name()?);
+    if std::fs::rename(&src, &dest).is_err() {
+        std::fs::copy(&src, &dest).ok()?;
+        let _ = std::fs::remove_file(&src);
+    }
+    Some(dest.to_string_lossy().replace('\\', "/"))
+}
+
+/// Core of `tag_to_board`, with the file move injected so it can be tested without a disk.
+/// Sounds carrying `tag` leave `src_id` for a new board called `name` (inheriting zoom, view
+/// mode and sort order); the tag disappears from the source and is not repeated on the moved
+/// sounds, since the board itself now plays that role. A sound whose file cannot be moved stays
+/// in the source board, tag included. Returns the new board's id.
+fn split_tag_into_board(
+    data: &mut Data,
+    src_id: u32,
+    tag: &str,
+    name: &str,
+    mover: &mut dyn FnMut(&Sound, u32) -> Option<String>,
+) -> Option<u32> {
+    let name = name.trim();
+    if name.is_empty() || name.chars().count() > MAX_BOARD_NAME_LEN {
+        return None;
+    }
+    let src_idx = data.tabs.iter().position(|t| t.id == src_id)?;
+    let new_id = data.tabs.iter().map(|t| t.id).max().map_or(0, |m| m + 1);
+
+    let src = &mut data.tabs[src_idx];
+    let mut moved = Vec::new();
+    let mut kept = Vec::new();
+    for mut sound in std::mem::take(&mut src.sounds) {
+        if !sound.tags.iter().any(|t| t == tag) {
+            kept.push(sound);
+        } else if let Some(path) = mover(&sound, new_id) {
+            sound.path = path;
+            sound.tags.retain(|t| t != tag);
+            moved.push(sound);
+        } else {
+            kept.push(sound);
+        }
+    }
+    src.sounds = kept;
+    if !src.sounds.iter().any(|s| s.tags.iter().any(|t| t == tag)) {
+        src.tags.retain(|t| t != tag);
+    }
+
+    // the new board keeps the moved sounds' remaining tags, in the source board's tag order
+    let mut tags: Vec<String> = src
+        .tags
+        .iter()
+        .filter(|t| moved.iter().any(|s| s.tags.contains(t)))
+        .cloned()
+        .collect();
+    tags.extend(moved.iter().flat_map(|s| s.tags.clone()));
+
+    let mut tab = Tab {
+        id: new_id,
+        name: name.to_string(),
+        zoom: src.zoom,
+        view_mode: src.view_mode,
+        sort_mode: src.sort_mode,
+        sounds: moved,
+        tags: normalize_tags(tags),
+        ..Default::default()
+    };
+    sort_sounds(&mut tab.sounds, tab.sort_mode);
+    data.tabs.push(tab);
+    Some(new_id)
+}
+
+/// Core of `board_to_tag`: every sound of `src_id` joins `dest_id` carrying `tag`, then the
+/// source board is deleted. A sound whose file cannot be moved stays behind, and then so does
+/// the source board. Returns false if nothing was done (bad ids, same board, invalid tag).
+fn merge_board_into_tag(
+    data: &mut Data,
+    src_id: u32,
+    dest_id: u32,
+    tag: &str,
+    mover: &mut dyn FnMut(&Sound, u32) -> Option<String>,
+) -> bool {
+    let tag = tag.trim();
+    if src_id == dest_id || tag.is_empty() || tag.chars().count() > MAX_TAG_LEN {
+        return false;
+    }
+    let (Some(src_idx), Some(dest_idx)) = (
+        data.tabs.iter().position(|t| t.id == src_id),
+        data.tabs.iter().position(|t| t.id == dest_id),
+    ) else {
+        return false;
+    };
+
+    let mut moved = Vec::new();
+    let mut kept = Vec::new();
+    for mut sound in std::mem::take(&mut data.tabs[src_idx].sounds) {
+        if let Some(path) = mover(&sound, dest_id) {
+            sound.path = path;
+            moved.push(sound);
+        } else {
+            kept.push(sound);
+        }
+    }
+    let src_tags = data.tabs[src_idx].tags.clone();
+    data.tabs[src_idx].sounds = kept;
+
+    let dest = &mut data.tabs[dest_idx];
+    // reuse the spelling of an existing tag instead of creating a case-variant of it
+    let tag = dest
+        .tags
+        .iter()
+        .chain(dest.sounds.iter().flat_map(|s| s.tags.iter()))
+        .find(|t| t.to_lowercase() == tag.to_lowercase())
+        .cloned()
+        .unwrap_or_else(|| tag.to_string());
+    for s in moved.iter_mut() {
+        s.tags.retain(|t| t.to_lowercase() != tag.to_lowercase());
+        s.tags.push(tag.clone());
+    }
+    dest.tags.push(tag);
+    dest.tags.extend(src_tags);
+    dest.tags = normalize_tags(std::mem::take(&mut dest.tags));
+    dest.sounds.extend(moved);
+    sort_sounds(&mut dest.sounds, dest.sort_mode);
+
+    if data.tabs[src_idx].sounds.is_empty() {
+        data.tabs.remove(src_idx);
+    }
+    true
+}
+
+/// Right-click a tag > "Turn into a soundboard": see `split_tag_into_board`. Returns every
+/// board (two of them changed), or `None` if the request was invalid.
+#[tauri::command]
+pub fn tag_to_board(state: State<AppState>, id: u32, tag: String, name: String) -> Option<Vec<Tab>> {
+    let mut data = state.data_lock();
+    split_tag_into_board(&mut data, id, &tag, &name, &mut |s, to| move_sound_file(s, id, to))?;
+    let result = data.tabs.clone();
+    drop(data);
+    persist(&state);
+    Some(result)
+}
+
+/// Right-click a soundboard > "Merge into a soundboard": see `merge_board_into_tag`. Returns
+/// every remaining board, or `None` if the request was invalid.
+#[tauri::command]
+pub fn board_to_tag(state: State<AppState>, id: u32, dest: u32, tag: String) -> Option<Vec<Tab>> {
+    let mut data = state.data_lock();
+    if !merge_board_into_tag(&mut data, id, dest, &tag, &mut |s, to| move_sound_file(s, id, to)) {
+        return None;
+    }
+    let result = data.tabs.clone();
+    drop(data);
+    persist(&state);
+    // the emptied source folder is no longer referenced by anything
+    if !result.iter().any(|t| t.id == id) {
+        let _ = std::fs::remove_dir(crate::config::sounds_dir(id));
+    }
+    Some(result)
+}
+
 #[tauri::command]
 pub fn set_hotkey(state: State<AppState>, id: u32, hotkeys_list: Vec<i32>) -> Option<Sound> {
     let mut data = state.data_lock();
@@ -641,4 +818,178 @@ fn spawn_normalization_backfill(app: tauri::AppHandle) {
             state.persist();
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sound(id: u32, name: &str, tags: &[&str]) -> Sound {
+        Sound {
+            id,
+            name: name.into(),
+            path: format!("/x/{id}.mp3"),
+            tags: tags.iter().map(|t| t.to_string()).collect(),
+            ..Default::default()
+        }
+    }
+
+    fn tab(id: u32, name: &str, tags: &[&str], sounds: Vec<Sound>) -> Tab {
+        Tab { id, name: name.into(), tags: tags.iter().map(|t| t.to_string()).collect(), sounds, ..Default::default() }
+    }
+
+    fn data(tabs: Vec<Tab>) -> Data {
+        Data { tabs, ..Default::default() }
+    }
+
+    fn ids(t: &Tab) -> Vec<u32> {
+        t.sounds.iter().map(|s| s.id).collect()
+    }
+
+    fn ok_mover(s: &Sound, to: u32) -> Option<String> {
+        Some(format!("/moved/{to}/{}", s.id))
+    }
+
+    #[test]
+    fn split_moves_tagged_sounds_and_drops_the_tag() {
+        let mut d = data(vec![tab(
+            0,
+            "Main",
+            &["Memes", "Music"],
+            vec![
+                sound(1, "a", &["Memes"]),
+                sound(2, "b", &["Memes", "Music"]),
+                sound(3, "c", &["Music"]),
+                sound(4, "d", &[]),
+            ],
+        )]);
+        let new_id = split_tag_into_board(&mut d, 0, "Memes", " Funny ", &mut ok_mover).unwrap();
+        assert_eq!(new_id, 1);
+
+        let (src, new) = (&d.tabs[0], &d.tabs[1]);
+        assert_eq!(ids(src), vec![3, 4]);
+        assert_eq!(src.tags, vec!["Music"]);
+        assert_eq!(new.name, "Funny");
+        assert_eq!(ids(new), vec![1, 2]);
+        assert!(new.sounds[0].tags.is_empty());
+        assert_eq!(new.sounds[1].tags, vec!["Music"]);
+        assert_eq!(new.tags, vec!["Music"]);
+        assert_eq!(new.sounds[0].path, "/moved/1/1");
+    }
+
+    #[test]
+    fn split_new_id_survives_earlier_deletions() {
+        let mut d = data(vec![tab(0, "A", &["t"], vec![sound(1, "a", &["t"])]), tab(5, "B", &[], vec![])]);
+        assert_eq!(split_tag_into_board(&mut d, 0, "t", "T", &mut ok_mover), Some(6));
+    }
+
+    #[test]
+    fn split_keeps_sounds_whose_file_cannot_move() {
+        let mut d = data(vec![tab(0, "Main", &["t"], vec![sound(1, "a", &["t"]), sound(2, "b", &["t"])])]);
+        let mut mover = |s: &Sound, to: u32| if s.id == 1 { None } else { ok_mover(s, to) };
+        split_tag_into_board(&mut d, 0, "t", "T", &mut mover).unwrap();
+        assert_eq!(ids(&d.tabs[0]), vec![1]);
+        assert_eq!(d.tabs[0].sounds[0].tags, vec!["t"]);
+        assert_eq!(d.tabs[0].tags, vec!["t"]);
+        assert_eq!(ids(&d.tabs[1]), vec![2]);
+    }
+
+    #[test]
+    fn split_rejects_bad_input() {
+        let mut d = data(vec![tab(0, "Main", &["t"], vec![sound(1, "a", &["t"])])]);
+        assert!(split_tag_into_board(&mut d, 0, "t", "   ", &mut ok_mover).is_none());
+        assert!(split_tag_into_board(&mut d, 0, "t", &"x".repeat(49), &mut ok_mover).is_none());
+        assert!(split_tag_into_board(&mut d, 9, "t", "T", &mut ok_mover).is_none());
+        assert_eq!(d.tabs.len(), 1);
+        assert_eq!(ids(&d.tabs[0]), vec![1]);
+    }
+
+    #[test]
+    fn split_of_an_empty_tag_just_makes_an_empty_board() {
+        let mut d = data(vec![tab(0, "Main", &["t"], vec![sound(1, "a", &[])])]);
+        split_tag_into_board(&mut d, 0, "t", "T", &mut ok_mover).unwrap();
+        assert!(d.tabs[0].tags.is_empty());
+        assert!(d.tabs[1].sounds.is_empty());
+    }
+
+    #[test]
+    fn merge_moves_every_sound_with_the_tag_and_removes_the_board() {
+        let mut d = data(vec![
+            tab(0, "Dest", &["Music"], vec![sound(1, "z", &["Music"])]),
+            tab(1, "Funny", &["Loud"], vec![sound(2, "a", &["Loud"]), sound(3, "b", &[])]),
+        ]);
+        assert!(merge_board_into_tag(&mut d, 1, 0, "Funny", &mut ok_mover));
+        assert_eq!(d.tabs.len(), 1);
+        let dest = &d.tabs[0];
+        assert_eq!(ids(dest), vec![2, 3, 1]); // default sort is alphabetical by name: a, b, z
+        assert_eq!(dest.sounds[0].tags, vec!["Loud", "Funny"]);
+        assert_eq!(dest.sounds[1].tags, vec!["Funny"]);
+        assert_eq!(dest.sounds[2].tags, vec!["Music"]);
+        assert_eq!(dest.tags, vec!["Music", "Funny", "Loud"]);
+    }
+
+    #[test]
+    fn merge_reuses_the_spelling_of_an_existing_tag() {
+        let mut d = data(vec![
+            tab(0, "Dest", &["Funny"], vec![]),
+            tab(1, "Src", &[], vec![sound(2, "a", &["funny"])]),
+        ]);
+        assert!(merge_board_into_tag(&mut d, 1, 0, "funny", &mut ok_mover));
+        assert_eq!(d.tabs[0].sounds[0].tags, vec!["Funny"]);
+        assert_eq!(d.tabs[0].tags, vec!["Funny"]);
+    }
+
+    #[test]
+    fn merge_keeps_the_board_if_a_file_cannot_move() {
+        let mut d = data(vec![
+            tab(0, "Dest", &[], vec![]),
+            tab(1, "Src", &[], vec![sound(2, "a", &[]), sound(3, "b", &[])]),
+        ]);
+        let mut mover = |s: &Sound, to: u32| if s.id == 3 { None } else { ok_mover(s, to) };
+        assert!(merge_board_into_tag(&mut d, 1, 0, "Src", &mut mover));
+        assert_eq!(d.tabs.len(), 2);
+        assert_eq!(ids(&d.tabs[0]), vec![2]);
+        assert_eq!(ids(&d.tabs[1]), vec![3]);
+        assert!(d.tabs[1].sounds[0].tags.is_empty());
+    }
+
+    #[test]
+    fn merge_rejects_bad_input() {
+        let mut d = data(vec![tab(0, "A", &[], vec![sound(1, "a", &[])]), tab(1, "B", &[], vec![])]);
+        assert!(!merge_board_into_tag(&mut d, 0, 0, "t", &mut ok_mover));
+        assert!(!merge_board_into_tag(&mut d, 0, 7, "t", &mut ok_mover));
+        assert!(!merge_board_into_tag(&mut d, 0, 1, "  ", &mut ok_mover));
+        assert!(!merge_board_into_tag(&mut d, 0, 1, &"x".repeat(33), &mut ok_mover));
+        assert_eq!(d.tabs.len(), 2);
+        assert_eq!(ids(&d.tabs[0]), vec![1]);
+    }
+
+    #[test]
+    fn move_sound_file_moves_managed_files_and_leaves_external_ones() {
+        let root = std::env::temp_dir().join(format!("voxpad-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        // an external file (not under any managed sounds folder) must not be touched
+        std::fs::create_dir_all(&root).unwrap();
+        let external = root.join("outside.mp3");
+        std::fs::write(&external, b"x").unwrap();
+        let mut s = sound(1, "a", &[]);
+        s.path = external.to_string_lossy().into_owned();
+        assert_eq!(move_sound_file(&s, 900_001, 900_002), Some(s.path.clone()));
+        assert!(external.exists());
+
+        // a managed file moves to the destination board's folder
+        let from = crate::config::sounds_dir(900_001);
+        std::fs::create_dir_all(&from).unwrap();
+        let managed = from.join("7_b.mp3");
+        std::fs::write(&managed, b"y").unwrap();
+        s.path = managed.to_string_lossy().replace('\\', "/");
+        let new_path = move_sound_file(&s, 900_001, 900_002).unwrap();
+        assert!(!managed.exists());
+        assert_eq!(std::fs::read(&new_path).unwrap(), b"y");
+        assert!(new_path.contains("900002"));
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(crate::config::sounds_dir(900_001));
+        let _ = std::fs::remove_dir_all(crate::config::sounds_dir(900_002));
+    }
 }

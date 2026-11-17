@@ -131,6 +131,8 @@ pub fn run() {
             commands::boards::reorder_tags,
             commands::boards::rename_tag,
             commands::boards::delete_tag,
+            commands::boards::tag_to_board,
+            commands::boards::board_to_tag,
             commands::boards::set_hotkey,
             commands::boards::get_hotkey_sequence,
             commands::sounds::play_sound,
