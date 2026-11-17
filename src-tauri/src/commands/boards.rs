@@ -149,6 +149,29 @@ pub fn create_tab(state: State<AppState>, name: String, cover: String) -> Option
     Some(tab)
 }
 
+/// Puts the boards in the order of `order` (a list of board ids). Unknown and repeated ids are
+/// ignored; boards missing from the list keep their relative order after the listed ones.
+fn reorder_tabs_by_ids(tabs: &mut Vec<Tab>, order: &[u32]) {
+    let mut rest = std::mem::take(tabs);
+    for id in order {
+        if let Some(pos) = rest.iter().position(|t| t.id == *id) {
+            tabs.push(rest.remove(pos));
+        }
+    }
+    tabs.extend(rest);
+}
+
+/// Stores the order of the soundboards in the left rail. Returns every board in its new order.
+#[tauri::command]
+pub fn reorder_tabs(state: State<AppState>, order: Vec<u32>) -> Vec<Tab> {
+    let mut data = state.data_lock();
+    reorder_tabs_by_ids(&mut data.tabs, &order);
+    let result = data.tabs.clone();
+    drop(data);
+    persist(&state);
+    result
+}
+
 #[tauri::command]
 pub fn set_tab_cover(state: State<AppState>, id: u32, cover: String) -> Option<Tab> {
     let mut data = state.data_lock();
@@ -848,6 +871,20 @@ mod tests {
 
     fn ok_mover(s: &Sound, to: u32) -> Option<String> {
         Some(format!("/moved/{to}/{}", s.id))
+    }
+
+    #[test]
+    fn reorder_follows_the_given_ids() {
+        let mut tabs = vec![tab(0, "A", &[], vec![]), tab(3, "B", &[], vec![]), tab(5, "C", &[], vec![])];
+        reorder_tabs_by_ids(&mut tabs, &[5, 0, 3]);
+        assert_eq!(tabs.iter().map(|t| t.id).collect::<Vec<_>>(), vec![5, 0, 3]);
+    }
+
+    #[test]
+    fn reorder_ignores_unknown_and_repeated_ids_and_keeps_missing_ones() {
+        let mut tabs = vec![tab(0, "A", &[], vec![]), tab(3, "B", &[], vec![]), tab(5, "C", &[], vec![])];
+        reorder_tabs_by_ids(&mut tabs, &[5, 9, 5]);
+        assert_eq!(tabs.iter().map(|t| t.id).collect::<Vec<_>>(), vec![5, 0, 3]);
     }
 
     #[test]

@@ -113,6 +113,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::boards::get_tabs,
             commands::boards::create_tab,
+            commands::boards::reorder_tabs,
             commands::boards::set_tab_cover,
             commands::boards::set_tab_zoom,
             commands::boards::set_tab_view_mode,
