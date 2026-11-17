@@ -54,6 +54,7 @@
         }"
         data-tag-row
         :data-tag-drop="t.tag"
+        @contextmenu.prevent.stop="openMenu($event, t.tag)"
       >
         <input
           v-if="editing === t.tag"
@@ -103,12 +104,47 @@
     </div>
 
     <div class="vx-tags__resize" @mousedown.prevent="startResize"></div>
+
+    <transition name="vx-pop">
+      <div
+        v-if="menu.show"
+        class="vx-context"
+        :style="{ left: menu.x + 'px', top: menu.y + 'px' }"
+        @click.stop
+        @contextmenu.prevent.stop
+      >
+        <button class="vx-context__item" @click="openSplit">
+          <VxIcon name="grid-view" :size="16" /> {{ $t('tags.toBoard') }}
+        </button>
+      </div>
+    </transition>
+
+    <VxModal :value="splitOpen" :title="$t('tags.toBoardTitle')" @input="closeSplit">
+      <p class="vx-split__hint">{{ $t('tags.toBoardHint', { tag: splitTag, count: splitCount }) }}</p>
+      <label class="vx-split__label">{{ $t('create.name') }}</label>
+      <input
+        ref="splitInput"
+        v-model="boardName"
+        class="vx-input"
+        type="text"
+        maxlength="48"
+        spellcheck="false"
+        @keydown.enter="confirmSplit"
+      />
+      <template #footer>
+        <button class="vx-btn" @click="closeSplit">{{ $t('common.cancel') }}</button>
+        <button class="vx-btn vx-btn--accent" :disabled="!boardName.trim()" @click="confirmSplit">
+          {{ $t('tags.toBoardConfirm') }}
+        </button>
+      </template>
+    </VxModal>
   </nav>
 </template>
 
 <script lang="ts">
 import Vue from 'vue';
 import VxIcon from '@/components/VxIcon.vue';
+import VxModal from '@/components/VxModal.vue';
 import { NO_TAG } from '@/store';
 
 const WIDTH_KEY = 'voxpad.tagRailWidth';
@@ -123,7 +159,7 @@ function applyWidth(px: number): void {
 
 export default Vue.extend({
   name: 'TagRail',
-  components: { VxIcon },
+  components: { VxIcon, VxModal },
   data: () => ({
     NO_TAG,
     creating: false,
@@ -134,6 +170,11 @@ export default Vue.extend({
     pressed: null as { tag: string; y: number } | null,
     dragging: null as string | null,
     dropIndex: null as number | null,
+    // right-click menu and the "turn into a soundboard" dialog
+    menu: { show: false, x: 0, y: 0, tag: '' },
+    splitOpen: false,
+    splitTag: '',
+    boardName: '',
   }),
   computed: {
     tags(): { tag: string; count: number }[] {
@@ -149,6 +190,9 @@ export default Vue.extend({
       const tab = this.$store.getters.currentTab;
       return tab ? tab.sounds.length : 0;
     },
+    splitCount(): number {
+      return this.tags.find(t => t.tag === this.splitTag)?.count ?? 0;
+    },
   },
   created() {
     try {
@@ -158,7 +202,15 @@ export default Vue.extend({
       // default width from the stylesheet
     }
   },
+  mounted() {
+    document.addEventListener('click', this.closeMenu);
+    document.addEventListener('contextmenu', this.closeMenu);
+    window.addEventListener('keydown', this.onKey);
+  },
   beforeDestroy() {
+    document.removeEventListener('click', this.closeMenu);
+    document.removeEventListener('contextmenu', this.closeMenu);
+    window.removeEventListener('keydown', this.onKey);
     this.stopDrag();
     this.stopResize();
   },
@@ -208,6 +260,40 @@ export default Vue.extend({
     remove(tag: string) {
       this.confirming = null;
       this.$store.dispatch('deleteTag', tag);
+    },
+
+    // --- right-click menu: turn a tag into a soundboard ---
+    openMenu(e: MouseEvent, tag: string) {
+      this.cancel();
+      this.confirming = null;
+      this.menu = { show: true, x: Math.min(e.clientX, window.innerWidth - 220), y: e.clientY, tag };
+    },
+    closeMenu() {
+      this.menu.show = false;
+    },
+    onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') this.closeMenu();
+    },
+    openSplit() {
+      this.splitTag = this.menu.tag;
+      this.boardName = this.menu.tag;
+      this.closeMenu();
+      this.splitOpen = true;
+      this.$nextTick(() => {
+        const input = this.$refs.splitInput as HTMLInputElement | undefined;
+        input?.focus();
+        input?.select();
+      });
+    },
+    closeSplit() {
+      this.splitOpen = false;
+    },
+    async confirmSplit() {
+      const name = this.boardName.trim();
+      if (!name || !this.splitOpen) return;
+      this.splitOpen = false;
+      const done = await this.$store.dispatch('tagToBoard', { tag: this.splitTag, name });
+      if (done) Vue.$toast.success(`${this.$t('tags.toBoardDone', { name })}`);
     },
 
     // --- drag to reorder (pointer events: native HTML5 drag-and-drop is intercepted by the
@@ -279,6 +365,60 @@ export default Vue.extend({
 </script>
 
 <style scoped lang="scss">
+.vx-context {
+  position: fixed;
+  z-index: 100;
+  min-width: 190px;
+  padding: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 32px oklch(0 0 0 / 0.45);
+
+  &__item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 9px 10px;
+    border: none;
+    background: none;
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--surface-3);
+    }
+  }
+}
+
+.vx-split {
+  &__hint {
+    margin: 0 0 14px;
+    color: var(--text-dim);
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  &__label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim);
+  }
+}
+
+.vx-pop-enter-active {
+  transition: opacity 0.1s var(--ease), transform 0.1s var(--ease);
+}
+.vx-pop-enter {
+  opacity: 0;
+  transform: scale(0.96);
+}
+
 .vx-tags {
   position: relative;
   display: flex;

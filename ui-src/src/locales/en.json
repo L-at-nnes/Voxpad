@@ -26,6 +26,7 @@
   },
   "board": {
     "delete": "Delete soundboard",
+    "merge": "Merge into a soundboard…",
     "importFiles": "Import files",
     "importFolder": "Import folder",
     "refreshImportedFolders": "Refresh imported folders",
@@ -77,7 +78,20 @@
     "delete": "Delete tag",
     "deleteConfirm": "Delete?",
     "emptyTitle": "No sounds with this tag",
-    "emptyBody": "Right-click a sound and choose “Manage tags” to add it here."
+    "emptyBody": "Right-click a sound and choose “Manage tags” to add it here.",
+    "toBoard": "Turn into a soundboard",
+    "toBoardTitle": "Turn tag into a soundboard",
+    "toBoardHint": "The {count} sound(s) tagged “{tag}” move to a new soundboard, and the tag is removed from this one.",
+    "toBoardConfirm": "Create soundboard",
+    "toBoardDone": "Soundboard “{name}” created"
+  },
+  "merge": {
+    "title": "Merge into a soundboard",
+    "hint": "All {count} sound(s) of “{name}” move into the soundboard you pick, under a tag. “{name}” is then removed.",
+    "into": "Merge into",
+    "tag": "Tag",
+    "tagPlaceholder": "Tag name",
+    "confirm": "Merge"
   },
   "inspector": {
     "volume": "Volume",
