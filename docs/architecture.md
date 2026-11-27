@@ -29,6 +29,7 @@ Voxpad is a [Tauri v2](https://tauri.app/) app: a Rust backend owns audio, hotke
 | `audio/winsound.rs` | Windows-only Core Audio plumbing used by the VB-Cable setup. |
 | `hotkeys/` | `manager.rs` holds the platform-independent matching state machine. `windows.rs` feeds it from a low-level keyboard hook, `stub_platform.rs` covers other platforms. |
 | `metadata.rs` | Reads audio tags with [lofty](https://github.com/Serial-ATA/lofty-rs). |
+| `covers.rs` | Turns a picked cover image into a 1920 px banner and a 128 px square thumbnail under `data/covers/<board id>/`, converts older boards at startup, cleans up after itself. |
 | `models.rs` | Serializable types shared with the frontend (`Tab`, `Sound`, `Settings`, `Config`, …). |
 | `config.rs` | Loads and saves `data/config.json` next to the executable. A config that cannot be parsed is moved aside, never overwritten. |
 | `state.rs`, `tray.rs` | Shared application state and the system tray. |
@@ -40,7 +41,7 @@ Voxpad is a [Tauri v2](https://tauri.app/) app: a Rust backend owns audio, hotke
 | `main.ts` | Entry point, plugin setup, and the typed `window.*` API surface. |
 | `utils/tauri-bridge.ts` | Implements every `window.foo()` as `invoke('foo')`, and forwards backend events into the frontend callbacks. |
 | `utils/backend.ts` | Initial load and event handlers (playback progress, finished sounds, hotkey capture). |
-| `store/index.ts` | Vuex store: boards, settings, playing state, queue, history, shuffle, tag filter. |
+| `store/index.ts` | Vuex store: boards, settings, playing state, queue, history, shuffle, play all, tag filter. Boards are addressed by `id` towards the backend; `activeTab` is an index into the list, which changes when boards are reordered. |
 | `components/` | One file per UI piece (`BoardRail`, `SoundGrid`, `SoundList`, `AlbumView`, `Inspector`, `PlaybackBar`, …). `Vx*` are the small shared primitives. |
 | `styles/voxpad.scss` | The design system: tokens and component styles. Vuetify is only used for a few helpers. |
 | `locales/en.json` | All UI strings. |

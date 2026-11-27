@@ -35,6 +35,9 @@ Most soundboards are either a bloated voice-changer suite or a barebones file li
   <img src="docs/images/list.png" alt="List view" width="440">
   <img src="docs/images/album.png" alt="Album view" width="440">
 </p>
+<p align="center">
+  <img src="docs/images/play-all.png" alt="Play all, shuffled, on the Effects tag" width="900">
+</p>
 
 ## Download
 
@@ -48,11 +51,11 @@ New here? Read the [getting started guide](docs/getting-started.md).
 
 | | |
 |---|---|
-| **Soundboards** | Any number of boards, each with a cover image or a gradient generated from its name. |
+| **Soundboards** | Any number of boards, reordered by drag and drop, each with a cover image (a thumbnail is generated for the rail) or a gradient generated from its name. |
 | **Import** | Add a folder or individual `.mp3`, `.wav` and `.flac` files. Imports are deduplicated by content; a refresh button re-scans known folders for new files only. |
-| **Playback** | One sound at a time per board, optional loop, queue, history with previous/next, seek, infinite shuffle with a short crossfade. |
+| **Playback** | One sound at a time per board, optional loop, queue, history with previous/next, seek, infinite shuffle with a short crossfade, and *Play all* to play every sound of a board once, in order or shuffled. |
 | **Views** | Cards, List or Album per board (albums come from the files' tags), six zoom levels. |
-| **Tags** | Tag sounds and filter any board by tag, including a live *No tag* filter. |
+| **Tags** | Tag sounds and filter any board by tag, including a live *No tag* filter. Turn a tag into its own soundboard, merge a soundboard into another one as a tag, or move a tag with its sounds to another board. |
 | **Hotkeys** | Per-sound global keybinds that work while minimized to the tray. |
 | **Audio routing** | Pick one or several output devices (monitoring and virtual mic), loudness normalization with an adjustable strength. |
 
