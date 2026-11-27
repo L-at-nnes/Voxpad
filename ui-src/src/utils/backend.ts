@@ -48,6 +48,8 @@ export async function initialize(): Promise<void> {
       $store.dispatch('playRandomNext', playingSound.sound);
     } else {
       $store.commit('clearTabPlaying', tabId);
+      // the last sound of a "Play all" just ended
+      $store.commit('setTabPlayAll', { tabId, active: false });
     }
   };
 
