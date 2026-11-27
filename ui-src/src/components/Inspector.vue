@@ -166,10 +166,15 @@
         </div>
 
         <div class="vx-field">
-          <button class="vx-btn vx-shuffle-btn" :disabled="playAllCount === 0" @click="playAll">
-            <VxIcon name="play" :size="16" filled />
-            {{ $t('inspector.playAll') }}
-            <span class="vx-play-all__count">{{ playAllCount }}</span>
+          <button
+            class="vx-btn vx-shuffle-btn"
+            :class="{ 'vx-btn--accent': playAllActive }"
+            :disabled="!playAllActive && playAllCount === 0"
+            @click="togglePlayAll"
+          >
+            <VxIcon :name="playAllActive ? 'stop' : 'play'" :size="16" filled />
+            {{ playAllActive ? $t('inspector.playAllStop') : $t('inspector.playAll') }}
+            <span v-if="!playAllActive" class="vx-play-all__count">{{ playAllCount }}</span>
           </button>
           <label class="vx-switch vx-play-all__switch">
             <input type="checkbox" :checked="playAllShuffle" @change="togglePlayAllShuffle" />
@@ -282,6 +287,9 @@ export default Vue.extend({
     },
     playAllShuffle(): boolean {
       return this.$store.getters.playAllShuffle;
+    },
+    playAllActive(): boolean {
+      return this.$store.getters.playAllActive;
     },
     queueTotalMs(): number {
       return this.queue.reduce((acc: number, s: Sound) => acc + (s.lengthInMs ?? 0), 0);
@@ -415,8 +423,8 @@ export default Vue.extend({
     stop() {
       this.$store.dispatch('stopSounds');  // stops active tab's sound
     },
-    playAll() {
-      this.$store.dispatch('playAll');
+    togglePlayAll() {
+      this.$store.dispatch(this.playAllActive ? 'stopPlayAll' : 'playAll');
     },
     togglePlayAllShuffle(e: Event) {
       this.$store.commit('setPlayAllShuffle', (e.target as HTMLInputElement).checked);
