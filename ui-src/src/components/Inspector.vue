@@ -165,6 +165,20 @@
           <p class="vx-field__hint">{{ $t('inspector.shuffleHint') }}</p>
         </div>
 
+        <div class="vx-field">
+          <button class="vx-btn vx-shuffle-btn" :disabled="playAllCount === 0" @click="playAll">
+            <VxIcon name="play" :size="16" filled />
+            {{ $t('inspector.playAll') }}
+            <span class="vx-play-all__count">{{ playAllCount }}</span>
+          </button>
+          <label class="vx-switch vx-play-all__switch">
+            <input type="checkbox" :checked="playAllShuffle" @change="togglePlayAllShuffle" />
+            <span class="vx-switch__track"></span>
+            <span class="vx-switch__label">{{ $t('inspector.playAllShuffle') }}</span>
+          </label>
+          <p class="vx-field__hint">{{ $t('inspector.playAllHint') }}</p>
+        </div>
+
         <!-- Now playing (short sounds only — long sounds have the bottom playbar) -->
         <div v-if="playing && playingDurationMs < 60000" class="vx-now">
           <div class="vx-now__card">
@@ -262,6 +276,12 @@ export default Vue.extend({
     },
     shuffleActive(): boolean {
       return this.$store.getters.shuffleActive;
+    },
+    playAllCount(): number {
+      return this.$store.getters.playAllCount;
+    },
+    playAllShuffle(): boolean {
+      return this.$store.getters.playAllShuffle;
     },
     queueTotalMs(): number {
       return this.queue.reduce((acc: number, s: Sound) => acc + (s.lengthInMs ?? 0), 0);
@@ -394,6 +414,12 @@ export default Vue.extend({
     },
     stop() {
       this.$store.dispatch('stopSounds');  // stops active tab's sound
+    },
+    playAll() {
+      this.$store.dispatch('playAll');
+    },
+    togglePlayAllShuffle(e: Event) {
+      this.$store.commit('setPlayAllShuffle', (e.target as HTMLInputElement).checked);
     },
     toggleShuffle() {
       this.$store.dispatch('toggleShuffle');
@@ -667,6 +693,20 @@ export default Vue.extend({
 
 .vx-shuffle-btn {
   width: 100%;
+}
+
+.vx-play-all {
+  &__count {
+    padding: 1px 8px;
+    border-radius: 99px;
+    background: var(--surface-3);
+    color: var(--text-dim);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  &__switch {
+    margin-top: 10px;
+  }
 }
 
 .vx-now {

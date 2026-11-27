@@ -124,6 +124,9 @@
     "removeFromQueue": "Remove from queue",
     "shuffleStart": "Shuffle play",
     "shuffleStop": "Stop shuffle",
+    "playAll": "Play all",
+    "playAllShuffle": "Shuffle the order",
+    "playAllHint": "Plays every sound of this board once, in order. With the switch on, the order is shuffled first. Follows the selected tag.",
     "shuffleHint": "Plays random sounds from this board endlessly until stopped."
   },
   "create": {
