@@ -31,11 +31,13 @@ Artist, album, year, track and disc tags are read from the files at import time.
 | Queue | Queued sounds play one after the other as each finishes. |
 | Playback bar | Elapsed and remaining time, seek, previous/next through the board's history. |
 | **Shuffle play** | Endless random playback for the current board, with a ~200 ms crossfade on skip and seek. Sounds are drawn at random each time, so repeats happen before everything has played. |
-| **Play all** | Plays every sound of the current board once, then stops, so each one comes out exactly once. Turn on **Shuffle the order** (off by default, remembered) to shuffle the list first. The button shows how many sounds it will play. |
+| **Play all** | Plays every sound of the current board once, then stops, so each one comes out exactly once. Turn on **Shuffle the order** (off by default, remembered) to shuffle the list first. The button shows how many sounds it will play. While it runs the button turns violet, like *Shuffle play*; click it again to cut the current sound and clear the queue. |
 
 ### Play all
 
-*Play all* sits under *Shuffle play* in the inspector. It follows the tag rail: with a tag selected it plays only that tag's sounds, with *No tag* only the untagged ones. The first sound starts immediately and the rest are loaded into the board's queue, so *previous/next* and the playback bar work as usual. Starting it replaces the board's queue and stops endless shuffle if it was running.
+*Play all* sits under *Shuffle play* in the inspector. It follows the tag rail: with a tag selected it plays only that tag's sounds, with *No tag* only the untagged ones. The first sound starts immediately and the rest are loaded into the board's queue, so *previous/next* and the playback bar work as usual. Starting it replaces the board's queue and stops endless shuffle if it was running; starting endless shuffle while *Play all* runs cancels it the same way.
+
+While *Play all* runs, the button turns violet and reads **Stop play all**. Clicking it stops the sound that is playing and empties the queue: everything is cancelled, exactly like stopping shuffle. It also switches back to *Play all* by itself once the last sound has ended, or if you clear the queue, press stop in the now-playing card, or pick a sound by hand after the queue has run out. Each board has its own state, so a *Play all* running on one board does not light the button on another.
 
 <p align="center">
   <img src="images/play-all.png" alt="Play all on the Effects tag with the shuffled order switch on" width="800">
