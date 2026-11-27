@@ -9,4 +9,4 @@ npm run lint     # lint and fix
 npm run test:unit
 ```
 
-Contribution guidelines are in the [main repository](https://github.com/L-at-nnes/Voxpad/blob/master/CONTRIBUTING.md).
+Contribution guidelines are in the [main repository](https://github.com/L-at-nnes/Voxpad/blob/main/CONTRIBUTING.md).

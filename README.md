@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/L-at-nnes/Voxpad/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/L-at-nnes/Voxpad?style=flat-square&color=c026a8"></a>
-  <a href="https://github.com/L-at-nnes/Voxpad/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/L-at-nnes/Voxpad/ci.yml?branch=master&style=flat-square&label=build"></a>
+  <a href="https://github.com/L-at-nnes/Voxpad/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/L-at-nnes/Voxpad/ci.yml?branch=main&style=flat-square&label=build"></a>
   <a href="LICENSE"><img alt="License: GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-8b5cf6?style=flat-square"></a>
 </p>
 

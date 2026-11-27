@@ -20,7 +20,7 @@ cd Voxpad
 
 ## Making a change
 
-1. Fork the repository and create a branch from `master`: `git switch -c fix/short-description`.
+1. Fork the repository and create a branch from `main`: `git switch -c fix/short-description`.
 2. Keep the change focused. One concern per pull request, and no unrelated reformatting.
 3. Follow the style of the surrounding code, including comment density and naming. Rust code should pass `cargo fmt` and `cargo clippy`; frontend code should pass `npm run lint`.
 4. Add or update tests when behavior changes (`cargo test` in `src-tauri/`, `npm run test:unit` in `ui-src/`).

@@ -47,7 +47,9 @@ cd ui-src;    npm run test:unit # frontend unit tests
 
 ## Releases
 
-Releases are built by GitHub Actions. Pushing a tag that starts with `v` builds the portable package on Windows and attaches it to a GitHub release:
+Every push to `main` and every pull request runs the CI workflow (portable build plus `cargo test`).
+
+Releases are built by GitHub Actions. Pushing a tag that starts with `v` builds the portable package on Windows, runs the Rust tests (a failing test stops the release) and attaches the zip to a GitHub release:
 
 ```powershell
 git tag v0.3.0
