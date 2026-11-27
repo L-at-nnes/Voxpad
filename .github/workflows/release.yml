@@ -30,6 +30,11 @@ jobs:
         shell: pwsh
         run: ./build.ps1
 
+      # a failing test stops the release before anything is published
+      - name: Rust tests
+        working-directory: src-tauri
+        run: cargo test --release
+
       - name: Zip
         shell: pwsh
         run: Compress-Archive -Path VoxPad-Portable -DestinationPath "VoxPad-${{ github.ref_name }}-windows-x64-portable.zip"
